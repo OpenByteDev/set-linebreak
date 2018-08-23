@@ -1,5 +1,6 @@
 const process = require('process');
 const path = require('path');
+const ignore = require('ignore');
 const fs = require('fs');
 const fsa = fs.promises;
 
@@ -11,20 +12,33 @@ async function main() {
 		return console.error('Invalid linebreak specified: ' + linebreak);
 
 	const dir = args.length > 1 ? args[1].toLowerCase() : '.';
-	const stats = await fsa.stat(dir);
-	if (!stats.isDirectory())
+	const dirStats = await fsa.stat(dir).catch(() => null);;
+	if (dirStats === null || !dirStats.isDirectory())
 		return console.error('Invalid directory specified: ' + dir);
 	
-	return run(dir, linebreak);
+	let ig = ignore().add(['.git', 'node_modules']);
+	const ignoreFile = args.length > 2 ? args[2].toLowerCase() : null;
+	if (ignoreFile !== null) {
+		const ignoreFileStats = await fsa.stat(ignoreFile).catch(() => null);
+		if (ignoreFileStats === null || ignoreFileStats.isDirectory())
+			return console.error('Invalid ignore specified: ' + ignoreFile);
+		const ignoreBuffer = await afs.readFile(ignoreFile);
+		const ignoreContents = ignoreBuffer.toString();
+		ig = ig.add(ignoreContents);
+	}
+	
+	return run(dir, linebreak, ig);
 }
 
-async function run(dir, linebreak) {
+async function run(dir, linebreak, ig) {
 	const files = await fsa.readdir(dir);
 	for (file of files) {
+		if (ig.ignores(file))
+			continue;
 		const p = path.join(dir, file);
 		const stats = await fsa.stat(p);
 		if (stats.isDirectory())
-			await run(p, linebreak);
+			await run(p, linebreak, ig);
 		else await exec(p, linebreak)
 	}
 }
